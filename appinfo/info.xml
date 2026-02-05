@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+    <id>openklant</id>
+    <name>OpenKlant</name>
+    <summary>OpenKlant customer interaction management integration for Nextcloud</summary>
+    <description><![CDATA[OpenKlant Integration for Nextcloud
+
+Integrate OpenKlant customer interaction registry with your Nextcloud instance.
+
+- Customer contact management from Nextcloud
+- Klantinteracties API integration
+- Link customer interactions with cases and documents
+- Common Ground / ZGW API compliant
+- Free and open source under EUPL
+
+**Requirements:**
+- OpenKlant server instance
+- Nextcloud 28 or higher
+    ]]></description>
+    <version>0.1.0</version>
+    <licence>agpl</licence>
+    <author mail="info@conduction.nl" homepage="https://www.conduction.nl/">Conduction</author>
+    <namespace>OpenKlant</namespace>
+    <category>office</category>
+    <category>social</category>
+    <website>https://github.com/ConductionNL/OpenKlant</website>
+    <bugs>https://github.com/ConductionNL/OpenKlant/issues</bugs>
+    <repository>https://github.com/ConductionNL/OpenKlant</repository>
+
+    <screenshot>https://raw.githubusercontent.com/ConductionNL/openklant/main/img/screenshot.png</screenshot>
+
+    <documentation>
+        <user>https://github.com/maykinmedia/open-klant</user>
+        <admin>https://github.com/maykinmedia/open-klant</admin>
+    </documentation>
+
+    <dependencies>
+        <php min-version="8.0" min-int-size="64"/>
+        <database min-version="10">pgsql</database>
+        <database>sqlite</database>
+        <database min-version="8.0">mysql</database>
+        <nextcloud min-version="28" max-version="33"/>
+    </dependencies>
+
+    <navigations>
+        <navigation>
+            <id>openklant</id>
+            <name>OpenKlant</name>
+            <route>openklant.page.index</route>
+            <icon>app.svg</icon>
+            <type>link</type>
+        </navigation>
+    </navigations>
+</info>
