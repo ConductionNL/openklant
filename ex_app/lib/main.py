@@ -1,29 +1,44 @@
-"""
-OpenKlant ExApp - FastAPI wrapper for Nextcloud AppAPI integration
+"""OpenKlant ExApp - Nextcloud External Application wrapper for OpenKlant.
 
 OpenKlant is a customer interaction registry for Dutch municipalities.
 See: https://github.com/maykinmedia/open-klant
 """
+
+import asyncio
+import logging
 import os
 import subprocess
-import asyncio
-import base64
+import threading
+import typing
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from nc_py_api import NextcloudApp
+from nc_py_api.ex_app import (
+    nc_app,
+    run_app,
+    setup_nextcloud_logging,
+)
+from nc_py_api.ex_app.integration_fastapi import AppAPIAuthMiddleware
 
-# Environment variables set by AppAPI
+
+# -- Logging -----------------------------------------------------------------
+logging.basicConfig(
+    level=logging.WARNING,
+    format="[%(funcName)s]: %(message)s",
+    datefmt="%H:%M:%S",
+)
+LOGGER = logging.getLogger("openklant")
+LOGGER.setLevel(logging.DEBUG)
+
+
+# -- Configuration -----------------------------------------------------------
 APP_ID = os.environ.get("APP_ID", "openklant")
-APP_VERSION = os.environ.get("APP_VERSION", "0.1.0")
-APP_SECRET = os.environ.get("APP_SECRET", "")
-APP_HOST = os.environ.get("APP_HOST", "0.0.0.0")
-APP_PORT = int(os.environ.get("APP_PORT", "9000"))
-NEXTCLOUD_URL = os.environ.get("NEXTCLOUD_URL", "http://nextcloud")
-
-# OpenKlant configuration - Django/uWSGI runs on 8000
 OPENKLANT_PORT = int(os.environ.get("OPENKLANT_PORT", "8000"))
+OPENKLANT_URL = f"http://localhost:{OPENKLANT_PORT}"
 OPENKLANT_PROCESS = None
 
 # Keycloak/OIDC configuration
@@ -33,37 +48,14 @@ KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "openklant")
 KEYCLOAK_CLIENT_SECRET = os.environ.get("KEYCLOAK_CLIENT_SECRET", "")
 
 
-def get_auth_header() -> dict:
-    """Generate AppAPI authentication header"""
-    auth = base64.b64encode(f":{APP_SECRET}".encode()).decode()
-    return {
-        "EX-APP-ID": APP_ID,
-        "EX-APP-VERSION": APP_VERSION,
-        "AUTHORIZATION-APP-API": auth,
-    }
-
-
-async def report_status(progress: int) -> None:
-    """Report initialization progress to Nextcloud"""
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.put(
-                f"{NEXTCLOUD_URL}/ocs/v1.php/apps/app_api/apps/status",
-                headers=get_auth_header(),
-                json={"progress": progress},
-                timeout=10,
-            )
-    except Exception as e:
-        print(f"Failed to report status: {e}")
-
-
-def run_management_command(command: list, timeout: int = 120) -> bool:
-    """Run a Django management command"""
+# -- Django Management Commands ----------------------------------------------
+def run_management_command(command: list[str], timeout: int = 120) -> bool:
+    """Run a Django management command."""
     env = os.environ.copy()
     env["DJANGO_SETTINGS_MODULE"] = "openklant.conf.docker"
     try:
         result = subprocess.run(
-            ["python", "/app/src/manage.py"] + command,
+            ["python", "/app/src/manage.py", *command],
             cwd="/app/src",
             env=env,
             capture_output=True,
@@ -71,25 +63,25 @@ def run_management_command(command: list, timeout: int = 120) -> bool:
             timeout=timeout,
         )
         if result.returncode != 0:
-            print(f"Command {command} failed: {result.stderr}")
+            LOGGER.error("Command %s failed: %s", command, result.stderr)
             return False
         return True
     except subprocess.TimeoutExpired:
-        print(f"Command {command} timed out")
+        LOGGER.error("Command %s timed out", command)
         return False
     except Exception as e:
-        print(f"Command {command} error: {e}")
+        LOGGER.error("Command %s error: %s", command, e)
         return False
 
 
-def get_oidc_env() -> dict:
-    """Get OIDC environment variables for Django if Keycloak is configured"""
+# -- OIDC Environment -------------------------------------------------------
+def get_oidc_env() -> dict[str, str]:
+    """Get OIDC environment variables for Django if Keycloak is configured."""
     if not KEYCLOAK_URL:
         return {}
 
     oidc_url = f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}"
     return {
-        # Mozilla Django OIDC settings
         "OIDC_RP_CLIENT_ID": KEYCLOAK_CLIENT_ID,
         "OIDC_RP_CLIENT_SECRET": KEYCLOAK_CLIENT_SECRET,
         "OIDC_OP_AUTHORIZATION_ENDPOINT": f"{oidc_url}/protocol/openid-connect/auth",
@@ -97,15 +89,15 @@ def get_oidc_env() -> dict:
         "OIDC_OP_USER_ENDPOINT": f"{oidc_url}/protocol/openid-connect/userinfo",
         "OIDC_OP_JWKS_ENDPOINT": f"{oidc_url}/protocol/openid-connect/certs",
         "OIDC_OP_LOGOUT_ENDPOINT": f"{oidc_url}/protocol/openid-connect/logout",
-        # Enable OIDC authentication
         "USE_OIDC_FOR_ADMIN_LOGIN": "True",
     }
 
 
+# -- OpenKlant Process Management -------------------------------------------
 def start_openklant() -> None:
-    """Start the OpenKlant service using uWSGI"""
+    """Start the OpenKlant service using uWSGI."""
     global OPENKLANT_PROCESS
-    if OPENKLANT_PROCESS is not None:
+    if OPENKLANT_PROCESS is not None and OPENKLANT_PROCESS.poll() is None:
         return
 
     env = os.environ.copy()
@@ -114,9 +106,8 @@ def start_openklant() -> None:
     # Add OIDC configuration if Keycloak is configured
     env.update(get_oidc_env())
     if KEYCLOAK_URL:
-        print(f"OIDC configured with Keycloak at {KEYCLOAK_URL}")
+        LOGGER.info("OIDC configured with Keycloak at %s", KEYCLOAK_URL)
 
-    # Start OpenKlant using uWSGI (production server)
     OPENKLANT_PROCESS = subprocess.Popen(
         [
             "uwsgi",
@@ -134,13 +125,19 @@ def start_openklant() -> None:
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        shell=False,
     )
-    print(f"OpenKlant started with PID: {OPENKLANT_PROCESS.pid}")
+
+    def log_output():
+        if OPENKLANT_PROCESS and OPENKLANT_PROCESS.stdout:
+            for line in OPENKLANT_PROCESS.stdout:
+                LOGGER.info("[openklant] %s", line.decode().strip())
+
+    threading.Thread(target=log_output, daemon=True).start()
+    LOGGER.info("OpenKlant started with PID: %d", OPENKLANT_PROCESS.pid)
 
 
 def stop_openklant() -> None:
-    """Stop the OpenKlant service"""
+    """Stop the OpenKlant service."""
     global OPENKLANT_PROCESS
     if OPENKLANT_PROCESS is not None:
         OPENKLANT_PROCESS.terminate()
@@ -149,17 +146,16 @@ def stop_openklant() -> None:
         except subprocess.TimeoutExpired:
             OPENKLANT_PROCESS.kill()
         OPENKLANT_PROCESS = None
-        print("OpenKlant stopped")
+        LOGGER.info("OpenKlant stopped")
 
 
 async def wait_for_openklant(timeout: int = 120) -> bool:
-    """Wait for OpenKlant to become healthy"""
+    """Wait for OpenKlant to become healthy."""
     for _ in range(timeout):
         try:
             async with httpx.AsyncClient() as client:
-                # OpenKlant root returns 200 or redirects
                 resp = await client.get(
-                    f"http://localhost:{OPENKLANT_PORT}/",
+                    f"{OPENKLANT_URL}/",
                     timeout=2,
                     follow_redirects=False,
                 )
@@ -171,95 +167,116 @@ async def wait_for_openklant(timeout: int = 120) -> bool:
     return False
 
 
+# -- Lifespan ----------------------------------------------------------------
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan handler"""
-    print(f"OpenKlant ExApp starting on {APP_HOST}:{APP_PORT}")
+async def lifespan(_app: FastAPI):
+    """Application lifespan handler."""
+    setup_nextcloud_logging("openklant", logging_level=logging.WARNING)
+    LOGGER.info("Starting OpenKlant ExApp")
     yield
     stop_openklant()
-    print("OpenKlant ExApp shutdown complete")
+    LOGGER.info("OpenKlant ExApp shutdown complete")
 
 
-app = FastAPI(lifespan=lifespan)
+# -- FastAPI App -------------------------------------------------------------
+APP = FastAPI(lifespan=lifespan)
+APP.add_middleware(AppAPIAuthMiddleware)
 
 
-@app.get("/heartbeat")
-async def heartbeat():
-    """Health check endpoint for AppAPI"""
+# -- Enabled Handler --------------------------------------------------------
+def enabled_handler(enabled: bool, nc: NextcloudApp) -> str:
+    """Handle app enable/disable events."""
+    if enabled:
+        LOGGER.info("Enabling OpenKlant ExApp")
+        start_openklant()
+    else:
+        LOGGER.info("Disabling OpenKlant ExApp")
+        stop_openklant()
+    return ""
+
+
+# -- Required Endpoints ------------------------------------------------------
+@APP.get("/heartbeat")
+async def heartbeat_callback():
+    """Heartbeat endpoint for AppAPI health checks."""
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
-                f"http://localhost:{OPENKLANT_PORT}/",
+                f"{OPENKLANT_URL}/",
                 timeout=5,
                 follow_redirects=False,
             )
             if resp.status_code in (200, 302, 301):
-                return JSONResponse({"status": "ok"})
+                return JSONResponse(content={"status": "ok"})
     except Exception:
         pass
-    return JSONResponse({"status": "error"}, status_code=503)
+    return JSONResponse(content={"status": "error"}, status_code=503)
 
 
-@app.post("/init")
-async def init(background_tasks: BackgroundTasks):
-    """Initialization endpoint called by AppAPI during deployment"""
-    async def do_init():
-        await report_status(0)
-        print("Starting OpenKlant initialization...")
-
-        await report_status(10)
-        # Run database migrations
-        print("Running database migrations...")
-        if not run_management_command(["migrate", "--noinput"]):
-            print("WARNING: Migrations failed - database may not be configured")
-
-        await report_status(30)
-        # Collect static files
-        print("Collecting static files...")
-        run_management_command(["collectstatic", "--noinput"])
-
-        await report_status(50)
-        # Start OpenKlant
-        start_openklant()
-
-        await report_status(70)
-        if await wait_for_openklant(timeout=120):
-            await report_status(100)
-            print("OpenKlant initialization complete")
-        else:
-            print("OpenKlant failed to start - check database configuration")
-            await report_status(0)
-
-    background_tasks.add_task(do_init)
-    return JSONResponse({"status": "init_started"})
+@APP.post("/init")
+async def init_callback(
+    b_tasks: BackgroundTasks,
+    nc: typing.Annotated[NextcloudApp, Depends(nc_app)],
+):
+    """Initialization endpoint called by AppAPI after installation."""
+    b_tasks.add_task(init_openklant_task, nc)
+    return JSONResponse(content={})
 
 
-@app.put("/enabled")
-async def enabled(request: Request):
-    """Enable/disable endpoint called by AppAPI"""
-    data = await request.json()
-    is_enabled = data.get("enabled", False)
+@APP.put("/enabled")
+def enabled_callback(
+    enabled: bool,
+    nc: typing.Annotated[NextcloudApp, Depends(nc_app)],
+):
+    """Enable/disable callback from AppAPI."""
+    return JSONResponse(content={"error": enabled_handler(enabled, nc)})
 
-    if is_enabled:
-        start_openklant()
-        await wait_for_openklant(timeout=90)
+
+async def init_openklant_task(nc: NextcloudApp):
+    """Background task for OpenKlant initialization with progress reporting."""
+    nc.set_init_status(0)
+    LOGGER.info("Starting OpenKlant initialization...")
+
+    # Run database migrations
+    nc.set_init_status(10)
+    LOGGER.info("Running database migrations...")
+    if not run_management_command(["migrate", "--noinput"]):
+        LOGGER.warning("Migrations failed - database may not be configured")
+
+    # Collect static files
+    nc.set_init_status(30)
+    LOGGER.info("Collecting static files...")
+    run_management_command(["collectstatic", "--noinput"])
+
+    # Start OpenKlant
+    nc.set_init_status(50)
+    start_openklant()
+
+    # Wait for OpenKlant to become healthy
+    nc.set_init_status(70)
+    if await wait_for_openklant(timeout=120):
+        nc.set_init_status(100)
+        LOGGER.info("OpenKlant initialization complete")
     else:
-        stop_openklant()
-
-    return JSONResponse({"status": "ok"})
+        LOGGER.error("OpenKlant failed to start - check database configuration")
 
 
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+# -- Catch-All Proxy ---------------------------------------------------------
+@APP.api_route(
+    "/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+)
 async def proxy(request: Request, path: str):
-    """Proxy all other requests to OpenKlant"""
+    """Proxy all requests to OpenKlant."""
     try:
         async with httpx.AsyncClient() as client:
-            url = f"http://localhost:{OPENKLANT_PORT}/{path}"
+            url = f"{OPENKLANT_URL}/{path}"
 
-            # Forward headers, including Authorization for OIDC tokens
+            # Forward headers, excluding hop-by-hop headers
             headers = {
-                k: v for k, v in request.headers.items()
-                if k.lower() not in ("host", "content-length")
+                k: v
+                for k, v in request.headers.items()
+                if k.lower() not in ("host", "content-length", "connection", "transfer-encoding")
             }
 
             resp = await client.request(
@@ -275,17 +292,20 @@ async def proxy(request: Request, path: str):
                 content=resp.content,
                 status_code=resp.status_code,
                 headers={
-                    k: v for k, v in resp.headers.items()
-                    if k.lower() not in ("content-encoding", "transfer-encoding")
+                    k: v
+                    for k, v in resp.headers.items()
+                    if k.lower() not in ("content-encoding", "transfer-encoding", "content-length")
                 },
             )
     except httpx.RequestError as e:
+        LOGGER.error("Proxy error: %s", str(e))
         return JSONResponse(
             {"error": f"Proxy error: {str(e)}"},
             status_code=502,
         )
 
 
+# -- Entry Point -------------------------------------------------------------
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host=APP_HOST, port=APP_PORT)
+    os.chdir(Path(__file__).parent)
+    run_app(APP, log_level="info")
