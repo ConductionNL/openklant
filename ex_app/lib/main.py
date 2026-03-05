@@ -185,7 +185,8 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/heartbeat")
 async def heartbeat():
-    """Health check endpoint for AppAPI"""
+    """Health check endpoint for AppAPI - always returns 200 so AppAPI can proceed with init"""
+    service_up = False
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
@@ -194,10 +195,10 @@ async def heartbeat():
                 follow_redirects=False,
             )
             if resp.status_code in (200, 302, 301):
-                return JSONResponse({"status": "ok"})
+                service_up = True
     except Exception:
         pass
-    return JSONResponse({"status": "error"}, status_code=503)
+    return JSONResponse({"status": "ok" if service_up else "waiting"})
 
 
 @app.post("/init")

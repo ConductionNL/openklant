@@ -1,51 +1,66 @@
-# OpenKlant ExApp for Nextcloud
+<p align="center">
+  <img src="img/app.svg" alt="OpenKlant logo" width="80" height="80">
+</p>
 
-Nextcloud ExApp (External Application) that integrates [OpenKlant](https://github.com/maykinmedia/open-klant) customer interaction registry.
+<h1 align="center">OpenKlant</h1>
 
-## About This App
+<p align="center">
+  <strong>Nextcloud integration for OpenKlant — customer interaction management for Dutch municipalities</strong>
+</p>
 
-This is a **Nextcloud ExApp** that packages the OpenKlant customer interaction registry as a containerized application managed by Nextcloud's AppAPI. When you install this app, Nextcloud will automatically deploy and manage the OpenKlant container.
+<p align="center">
+  <a href="https://github.com/ConductionNL/openklant/releases"><img src="https://img.shields.io/github/v/release/ConductionNL/openklant" alt="Latest release"></a>
+  <a href="https://github.com/ConductionNL/openklant/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-EUPL--1.2-blue" alt="License"></a>
+</p>
 
-**For OpenKlant documentation, see:** https://github.com/maykinmedia/open-klant
+---
+
+> **:warning: This is a Nextcloud integration wrapper only.**
+>
+> This app packages [OpenKlant](https://github.com/maykinmedia/open-klant) for deployment via Nextcloud's [AppAPI](https://github.com/cloud-py-api/app_api). Conduction B.V. does not provide support, licensing, guarantees, or services for the underlying OpenKlant software.
+>
+> For support, licensing, and pricing of OpenKlant, contact the original developers:
+> **[Maykin Media](https://www.maykinmedia.nl/)** — [OpenKlant documentation](https://open-klant.readthedocs.io/)
+
+---
+
+This Nextcloud ExApp (External Application) integrates the [OpenKlant](https://github.com/maykinmedia/open-klant) customer interaction registry into your Nextcloud environment. When installed, Nextcloud automatically deploys and manages the OpenKlant container through the AppAPI framework, making customer interaction management available without separate infrastructure setup.
 
 ## What is OpenKlant?
 
-[OpenKlant](https://github.com/maykinmedia/open-klant) is an open-source customer interaction registry for Dutch municipalities and government organizations. Built by [Maykin Media](https://www.maykinmedia.nl/), it is part of the [Common Ground](https://commonground.nl/) ecosystem.
+[OpenKlant](https://github.com/maykinmedia/open-klant) is an open-source customer interaction registry built for Dutch municipalities and government organizations. Developed by [Maykin Media](https://www.maykinmedia.nl/), it is part of the [Common Ground](https://commonground.nl/) ecosystem and implements the ZGW (Zaakgericht Werken) API standards for managing customer contacts and interactions.
 
-APIs provided by OpenKlant:
-- **Klantinteracties API** - Customer interaction tracking and management
-- **Contactmomenten API** - Contact moments registry (phone, email, in-person)
-- **Klanten API** - Customer information registry
+OpenKlant exposes three core APIs:
+
+- **Klantinteracties API** — Customer interaction tracking and management
+- **Contactmomenten API** — Contact moments registry (phone, email, in-person)
+- **Klanten API** — Customer information registry
 
 ## What This App Does
 
-- Packages OpenKlant as a Nextcloud ExApp
-- Nextcloud automatically manages the container lifecycle
-- Provides customer interaction APIs directly within Nextcloud
-- Integrates with Nextcloud's AppAPI for seamless deployment
+- **Packages OpenKlant as a Nextcloud ExApp** — wraps the upstream `maykinmedia/open-klant` Docker image with a FastAPI-based AppAPI integration layer
+- **Automated container lifecycle** — Nextcloud handles deployment, initialization, health checks, and shutdown through AppAPI
+- **Database migrations on init** — Django migrations and static file collection run automatically during first deployment
+- **Request proxying** — all API requests are forwarded to the internal OpenKlant instance, making the Klantinteracties, Contactmomenten, and Klanten APIs available through Nextcloud
+- **Optional SSO via Keycloak** — supports OIDC authentication through a configurable Keycloak connection
 
 ## Requirements
 
-- Nextcloud 30 or higher
-- AppAPI app installed and configured with a deploy daemon
-- Docker environment for ExApp containers
-
-### External Dependencies
-
-OpenKlant requires additional services for full functionality:
-
-| Service | Purpose | Required |
-|---------|---------|----------|
-| PostgreSQL | Database | Yes |
-| Redis | Caching (optional) | No |
+| Requirement | Details |
+|-------------|---------|
+| Nextcloud | 30 or higher (tested up to 33) |
+| AppAPI | Installed and configured with a Docker deploy daemon |
+| Docker | Required for ExApp container management |
+| PostgreSQL | External database for OpenKlant data storage (required) |
+| Redis | Caching backend (optional, improves performance) |
 
 ## Installation
 
 ### Via Nextcloud App Store
 
-1. Ensure AppAPI is installed and configured
-2. Search for "OpenKlant" in the Nextcloud app store
-3. Click Install - Nextcloud will pull and start the container
+1. Ensure the [AppAPI](https://apps.nextcloud.com/apps/app_api) app is installed and a deploy daemon is configured
+2. Search for **OpenKlant** in the Nextcloud app store
+3. Click **Install** — Nextcloud will pull and start the container automatically
 
 ### Manual Registration
 
@@ -62,70 +77,50 @@ docker exec -u www-data nextcloud php occ app_api:app:enable openklant
 
 ## Configuration
 
-Configure via Nextcloud Admin Settings or environment variables:
+Environment variables can be set through Nextcloud Admin Settings or passed directly to the container:
 
-| Variable | Description |
-|----------|-------------|
-| `DB_HOST` | PostgreSQL database host |
-| `DB_NAME` | Database name |
-| `DB_USER` | Database username |
-| `DB_PASSWORD` | Database password |
-| `SECRET_KEY` | Django secret key |
-| `ALLOWED_HOSTS` | Allowed hostnames (comma-separated) |
-
-## Development
-
-### Building the Docker Image
-
-```bash
-# Build locally
-make build
-
-# Push to registry
-make push
-
-# Test locally
-make test
-```
-
-### Project Structure
-
-```
-openklant/
-├── appinfo/
-│   └── info.xml          # ExApp manifest
-├── ex_app/
-│   └── lib/
-│       └── main.py       # FastAPI wrapper for AppAPI
-├── Dockerfile            # Container definition
-├── entrypoint.sh         # Container startup
-├── requirements.txt      # Python dependencies
-└── Makefile              # Build automation
-```
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `DB_HOST` | PostgreSQL database host | Yes | `localhost` |
+| `DB_NAME` | PostgreSQL database name | Yes | `openklant` |
+| `DB_USER` | PostgreSQL database username | Yes | `openklant` |
+| `DB_PASSWORD` | PostgreSQL database password | Yes | `openklant` |
+| `SECRET_KEY` | Django secret key (use a random string in production) | Yes | `change-me-in-production` |
+| `ALLOWED_HOSTS` | Comma-separated list of allowed hostnames | Yes | `*` |
+| `KEYCLOAK_URL` | Keycloak server URL for SSO (e.g., `http://keycloak:8080`) | No | — |
+| `KEYCLOAK_REALM` | Keycloak realm name | No | `commonground` |
+| `KEYCLOAK_CLIENT_ID` | OIDC client ID for this app | No | `openklant` |
+| `KEYCLOAK_CLIENT_SECRET` | OIDC client secret for this app | No | — |
 
 ## Architecture
 
-This ExApp uses a FastAPI wrapper that:
+This ExApp uses a **FastAPI wrapper** that bridges Nextcloud's AppAPI protocol with the upstream OpenKlant Django application:
 
-1. Implements AppAPI lifecycle endpoints (`/heartbeat`, `/init`, `/enabled`)
-2. Runs Django migrations during initialization
-3. Starts OpenKlant using uWSGI (production WSGI server)
-4. Proxies requests to the OpenKlant backend
-5. Reports health status back to Nextcloud
+1. **Entrypoint** — Uvicorn starts the FastAPI wrapper on port 9000 (the AppAPI communication port)
+2. **Initialization** (`/init`) — Runs Django database migrations, collects static files, then starts the OpenKlant uWSGI server on port 8000
+3. **Health checks** (`/heartbeat`) — Verifies the internal OpenKlant instance is responding and reports status back to Nextcloud
+4. **Lifecycle management** (`/enabled`) — Starts or stops the OpenKlant uWSGI process based on the app's enabled state in Nextcloud
+5. **Request proxying** (`/{path}`) — All other requests are forwarded to the internal OpenKlant instance on port 8000, preserving headers, query parameters, and request bodies
 
-## Related Projects
+The container is based on the upstream `maykinmedia/open-klant:2.2.0` image, with the FastAPI wrapper and its dependencies (uvicorn, httpx) added on top.
 
-| Project | Description | Links |
-|---------|-------------|-------|
-| **OpenKlant** | Customer interaction registry | [GitHub](https://github.com/maykinmedia/open-klant) / [Maykin Media](https://www.maykinmedia.nl/) |
-| **Nextcloud AppAPI** | External app framework | [GitHub](https://github.com/nextcloud/app_api) / [Docs](https://docs.nextcloud.com/server/latest/developer_manual/exapp_development/) |
-| **OpenZaak** | ZGW API backend | [GitHub](https://github.com/open-zaak/open-zaak) / [Docs](https://open-zaak.readthedocs.io/) |
-| **Valtimo** | BPM and case management | [Website](https://www.valtimo.nl/) / [Docs](https://docs.valtimo.nl/) |
+## Links
+
+| Resource | URL |
+|----------|-----|
+| OpenKlant source code | [github.com/maykinmedia/open-klant](https://github.com/maykinmedia/open-klant) |
+| OpenKlant documentation | [open-klant.readthedocs.io](https://open-klant.readthedocs.io/) |
+| Maykin Media (original developer) | [maykinmedia.nl](https://www.maykinmedia.nl/) |
+| This wrapper (GitHub) | [github.com/ConductionNL/openklant](https://github.com/ConductionNL/openklant) |
+| Report wrapper issues | [github.com/ConductionNL/openklant/issues](https://github.com/ConductionNL/openklant/issues) |
+| Nextcloud AppAPI docs | [docs.nextcloud.com/server/latest/developer_manual/exapp_development/](https://docs.nextcloud.com/server/latest/developer_manual/exapp_development/) |
+| Common Ground | [commonground.nl](https://commonground.nl/) |
 
 ## License
 
-AGPL-3.0 - See [LICENSE](LICENSE) for details.
+EUPL-1.2 — See [LICENSE](LICENSE) for the full text.
 
-## Author
+## Authors
 
-[Conduction B.V.](https://conduction.nl) - info@conduction.nl
+Built by [Conduction](https://conduction.nl) — Nextcloud integration wrapper only.
+OpenKlant is developed by [Maykin Media](https://www.maykinmedia.nl/).
