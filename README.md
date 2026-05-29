@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="img/app.svg" alt="OpenKlant logo" width="80" height="80">
+  <img src="img/app-store.svg" alt="OpenKlant logo" width="80" height="80">
 </p>
 
 <h1 align="center">OpenKlant</h1>
