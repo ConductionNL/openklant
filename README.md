@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ConductionNL/openklant/releases"><img src="https://img.shields.io/github/v/release/ConductionNL/openklant" alt="Latest release"></a>
-  <a href="https://github.com/ConductionNL/openklant/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-EUPL--1.2-blue" alt="License"></a>
+  <a href="https://codeberg.org/Conduction/openklant/releases"><img src="https://img.shields.io/gitea/v/release/Conduction/openklant?gitea_url=https%3A%2F%2Fcodeberg.org" alt="Latest release"></a>
+  <a href="https://codeberg.org/Conduction/openklant/src/branch/main/LICENSE"><img src="https://img.shields.io/badge/license-EUPL--1.2-blue" alt="License"></a>
 </p>
 
 ---
@@ -111,8 +111,8 @@ The container is based on the upstream `maykinmedia/open-klant:2.2.0` image, wit
 | OpenKlant source code | [github.com/maykinmedia/open-klant](https://github.com/maykinmedia/open-klant) |
 | OpenKlant documentation | [open-klant.readthedocs.io](https://open-klant.readthedocs.io/) |
 | Maykin Media (original developer) | [maykinmedia.nl](https://www.maykinmedia.nl/) |
-| This wrapper (GitHub) | [github.com/ConductionNL/openklant](https://github.com/ConductionNL/openklant) |
-| Report wrapper issues | [github.com/ConductionNL/openklant/issues](https://github.com/ConductionNL/openklant/issues) |
+| This wrapper (Codeberg) | [codeberg.org/Conduction/openklant](https://codeberg.org/Conduction/openklant) |
+| Report wrapper issues | [codeberg.org/Conduction/openklant/issues](https://codeberg.org/Conduction/openklant/issues) |
 | Nextcloud AppAPI docs | [docs.nextcloud.com/server/latest/developer_manual/exapp_development/](https://docs.nextcloud.com/server/latest/developer_manual/exapp_development/) |
 | Common Ground | [commonground.nl](https://commonground.nl/) |
 
