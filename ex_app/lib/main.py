@@ -4,14 +4,15 @@ OpenKlant ExApp - FastAPI wrapper for Nextcloud AppAPI integration
 OpenKlant is a customer interaction registry for Dutch municipalities.
 See: https://github.com/maykinmedia/open-klant
 """
-import os
-import subprocess
+
 import asyncio
 import base64
+import os
+import subprocess
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 # Environment variables set by AppAPI
@@ -63,7 +64,7 @@ def run_management_command(command: list, timeout: int = 120) -> bool:
     env["DJANGO_SETTINGS_MODULE"] = "openklant.conf.docker"
     try:
         result = subprocess.run(
-            ["python", "/app/src/manage.py"] + command,
+            ["python", "/app/src/manage.py", *command],
             cwd="/app/src",
             env=env,
             capture_output=True,
@@ -120,16 +121,25 @@ def start_openklant() -> None:
     OPENKLANT_PROCESS = subprocess.Popen(
         [
             "uwsgi",
-            "--http", f"0.0.0.0:{OPENKLANT_PORT}",
-            "--module", "openklant.wsgi:application",
-            "--chdir", "/app/src",
-            "--static-map", "/static=/app/static",
-            "--static-map", "/media=/app/media",
+            "--http",
+            f"0.0.0.0:{OPENKLANT_PORT}",
+            "--module",
+            "openklant.wsgi:application",
+            "--chdir",
+            "/app/src",
+            "--static-map",
+            "/static=/app/static",
+            "--static-map",
+            "/media=/app/media",
             "--master",
-            "--processes", "2",
-            "--threads", "2",
-            "--harakiri", "60",
-            "--max-requests", "1000",
+            "--processes",
+            "2",
+            "--threads",
+            "2",
+            "--harakiri",
+            "60",
+            "--max-requests",
+            "1000",
         ],
         env=env,
         stdout=subprocess.PIPE,
@@ -204,6 +214,7 @@ async def heartbeat():
 @app.post("/init")
 async def init(background_tasks: BackgroundTasks):
     """Initialization endpoint called by AppAPI during deployment"""
+
     async def do_init():
         await report_status(0)
         print("Starting OpenKlant initialization...")
@@ -258,10 +269,7 @@ async def proxy(request: Request, path: str):
             url = f"http://localhost:{OPENKLANT_PORT}/{path}"
 
             # Forward headers, including Authorization for OIDC tokens
-            headers = {
-                k: v for k, v in request.headers.items()
-                if k.lower() not in ("host", "content-length")
-            }
+            headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length")}
 
             resp = await client.request(
                 method=request.method,
@@ -276,17 +284,17 @@ async def proxy(request: Request, path: str):
                 content=resp.content,
                 status_code=resp.status_code,
                 headers={
-                    k: v for k, v in resp.headers.items()
-                    if k.lower() not in ("content-encoding", "transfer-encoding")
+                    k: v for k, v in resp.headers.items() if k.lower() not in ("content-encoding", "transfer-encoding")
                 },
             )
     except httpx.RequestError as e:
         return JSONResponse(
-            {"error": f"Proxy error: {str(e)}"},
+            {"error": f"Proxy error: {e!s}"},
             status_code=502,
         )
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host=APP_HOST, port=APP_PORT)
